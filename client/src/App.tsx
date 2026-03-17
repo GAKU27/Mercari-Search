@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, TrendingUp, ExternalLink, Settings, AlertCircle, Trash2, Zap } from 'lucide-react';
+import { Plus, TrendingUp, RefreshCw, ExternalLink, Settings, ShieldCheck, AlertCircle, Trash2, Zap } from 'lucide-react';
 import PriceChart from './components/PriceChart';
 import './index.css';
 
@@ -120,6 +120,26 @@ function App() {
       // 5. ローカル状態を即座に更新
       setTrackedItems(newContent);
       setUrl('');
+
+      // 6. スクレイピングワークフローを即座にキック（オプション）
+      try {
+        await axios.post(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/update-prices.yml/dispatches`, {
+          ref: 'main'
+        }, {
+          headers: { Authorization: `token ${githubToken}` }
+        });
+      } catch (e) {
+        console.warn('Workflow dispatch failed (possibly missing actions:write permission)', e);
+      }
+
+      alert('商品を追加しました！すぐに価格チェックを開始します。');
+    } catch (err: any) {
+      console.error(err);
+      setError(err.response?.status === 401 ? 'GitHub トークンが無効です。' : err.message);
+    } finally {
+      setAdding(false);
+    }
+  };
 
   const handleRefresh = async () => {
     if (!githubToken) {
