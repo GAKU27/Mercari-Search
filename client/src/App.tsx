@@ -32,6 +32,7 @@ const fromBase64 = (base64: string) => {
 
 function App() {
   const [historyData, setHistoryData] = useState<HistoryData>({});
+  const [trackedItems, setTrackedItems] = useState<{url: string, name: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,11 +52,15 @@ function App() {
 
   const fetchData = async () => {
     try {
-      const res = await axios.get('./price_history.json?t=' + Date.now());
-      setHistoryData(res.data);
+      const [historyRes, itemsRes] = await Promise.all([
+        axios.get('./price_history.json?t=' + Date.now()),
+        axios.get('./tracked_items.json?t=' + Date.now())
+      ]);
+      setHistoryData(historyRes.data);
+      setTrackedItems(itemsRes.data);
       setError(null);
     } catch (err) {
-      console.error('Failed to fetch history data', err);
+      console.error('Failed to fetch data', err);
       setError('データの読み込みに失敗しました。最初のスクレイピングが完了するまでお待ちください。');
     } finally {
       setLoading(false);
@@ -154,7 +159,7 @@ function App() {
             <p className="subtitle" style={{ margin: 0 }}>GitHub Actions で 30分ごとに価格を自動チェック</p>
           </div>
           <div className="badge">
-            {Object.keys(historyData).length} 個のアイテム
+            {trackedItems.length} 個のアイテム
           </div>
         </div>
       </header>
@@ -212,25 +217,32 @@ function App() {
         </div>
       ) : (
         <div className="items-grid">
-          {urls.map((url) => {
-            const item = historyData[url];
-            const currentPrice = item.history.length > 0 ? item.history[item.history.length - 1].price : 0;
-            const lastUpdate = item.history.length > 0 ? new Date(item.history[item.history.length - 1].timestamp).toLocaleString() : '---';
+          {trackedItems.map((trackedItem) => {
+            const item = historyData[trackedItem.url];
+            const hasData = !!item;
+            const currentPrice = hasData && item.history.length > 0 ? item.history[item.history.length - 1].price : 0;
+            const lastUpdate = hasData && item.history.length > 0 ? new Date(item.history[item.history.length - 1].timestamp).toLocaleString() : '---';
 
             return (
-              <div key={url} className="card item-card">
+              <div key={trackedItem.url} className="card item-card">
                 <div className="item-header">
-                  <img src={item.imageUrl} alt={item.name} className="item-image" />
+                  {hasData ? (
+                    <img src={item.imageUrl} alt={item.name} className="item-image" />
+                  ) : (
+                    <div className="item-image" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--glass)' }}>
+                      <RefreshCw className="spin" size={24} style={{ opacity: 0.3 }} />
+                    </div>
+                  )}
                   <div className="item-info">
-                    <div className="item-name">{item.name}</div>
-                    <div className="item-price">¥{currentPrice.toLocaleString()}</div>
+                    <div className="item-name">{hasData ? item.name : "チェック待ち..."}</div>
+                    <div className="item-price">{hasData ? `¥${currentPrice.toLocaleString()}` : "---"}</div>
                   </div>
                   <div style={{ display: 'flex', gap: '4px' }}>
-                    <a href={url} target="_blank" rel="noopener noreferrer" className="delete-btn" style={{ padding: '8px' }} title="メルカリを開く">
+                    <a href={trackedItem.url} target="_blank" rel="noopener noreferrer" className="delete-btn" style={{ padding: '8px' }} title="メルカリを開く">
                       <ExternalLink size={18} />
                     </a>
                     <button 
-                      onClick={() => deleteItem(url)} 
+                      onClick={() => deleteItem(trackedItem.url)} 
                       className="delete-btn" 
                       style={{ padding: '8px', color: '#ff4d4d' }}
                       title="追跡を解除"
@@ -241,22 +253,27 @@ function App() {
                 </div>
                 
                 <div className="chart-container">
-                  <PriceChart data={item.history} />
+                  {hasData ? <PriceChart data={item.history} /> : (
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                      最初の価格データを取得中...
+                    </div>
+                  )}
                 </div>
                 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <RefreshCw size={12} /> 更新: {lastUpdate}
+                    <RefreshCw size={12} className={!hasData ? "spin" : ""} /> 更新: {lastUpdate}
                   </div>
-                  <div style={{ color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <ShieldCheck size={14} /> 追跡中
+                  <div style={{ color: hasData ? 'var(--success)' : 'var(--accent)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {hasData ? <ShieldCheck size={14} /> : <div className="loading-spinner" style={{ width: '12px', height: '12px', borderWidth: '2px' }}></div>}
+                    {hasData ? "追跡中" : "準備中"}
                   </div>
                 </div>
               </div>
             );
           })}
 
-          {urls.length === 0 && (
+          {trackedItems.length === 0 && (
             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px', color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: '16px' }}>
               <TrendingUp size={48} style={{ marginBottom: '16px', opacity: 0.3 }} />
               <p>追跡している商品がありません。上の入力欄からURLを追加してください。</p>
