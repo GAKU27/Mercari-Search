@@ -37,8 +37,8 @@ function App() {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState('');
-  const [githubToken, setGithubToken] = useState('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');
-  const [showSettings, setShowSettings] = useState(false);
+  const [githubToken, setGithubToken] = useState(localStorage.getItem('gh_token') || '');
+  const [showSettings, setShowSettings] = useState(!localStorage.getItem('gh_token'));
   const [focusedUrl, setFocusedUrl] = useState<string | null>(null);
 
   const REPO_OWNER = 'GAKU27';
