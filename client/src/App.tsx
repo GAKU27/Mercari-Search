@@ -148,7 +148,6 @@ function App() {
     }
   };
 
-  const urls = Object.keys(historyData);
 
   return (
     <div className="container">
