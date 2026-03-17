@@ -41,6 +41,9 @@ jobs:
           cd client
           npm run build
 
+      - name: Debug Output
+        run: ls -R client/dist
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
