@@ -105,8 +105,22 @@ function App() {
         headers: { Authorization: `token ${githubToken}` }
       });
 
+      // 5. ローカル状態を即座に更新
+      setTrackedItems(newContent);
       setUrl('');
-      alert('商品を追加しました！約30分以内に最初のデータが取得されます。');
+
+      // 6. スクレイピングワークフローを即座にキック（オプション）
+      try {
+        await axios.post(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/update-prices.yml/dispatches`, {
+          ref: 'main'
+        }, {
+          headers: { Authorization: `token ${githubToken}` }
+        });
+      } catch (e) {
+        console.warn('Workflow dispatch failed (possibly missing actions:write permission)', e);
+      }
+
+      alert('商品を追加しました！すぐに価格チェックを開始します。');
     } catch (err: any) {
       console.error(err);
       setError(err.response?.status === 401 ? 'GitHub トークンが無効です。' : err.message);
@@ -140,8 +154,10 @@ function App() {
         headers: { Authorization: `token ${githubToken}` }
       });
 
-      alert('商品を削除しました。反映まで数分かかる場合があります。');
-      fetchData();
+      // 4. ローカル状態を即座に更新
+      setTrackedItems(newContent);
+      alert('商品を削除しました。');
+      // fetchData(); // fetch はバックグラウンドで行われるのでローカル更新のみで十分
     } catch (err: any) {
       console.error(err);
       setError('削除に失敗しました。トークンの権限を確認してください。');
