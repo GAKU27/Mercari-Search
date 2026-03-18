@@ -38,5 +38,15 @@
         "timestamp": "2026-03-17T11:42:27.275Z"
       }
     ]
+  },
+  "https://jp.mercari.com/item/m38677585425": {
+    "name": "STAEDTLER ヘキサゴナル by メルカリ",
+    "imageUrl": "https://static.mercdn.net/item/detail/orig/photos/m38677585425_1.jpg?1773728519",
+    "history": [
+      {
+        "price": 1500,
+        "timestamp": "2026-03-18T05:14:08.875Z"
+      }
+    ]
   }
 }
