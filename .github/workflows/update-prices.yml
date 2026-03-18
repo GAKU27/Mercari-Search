@@ -32,6 +32,10 @@ jobs:
 
     - name: Run Scraper
       run: npm run scrape
+      env:
+        VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+        VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+        VAPID_EMAIL: ${{ secrets.VAPID_EMAIL }}
 
     - name: Commit and Push changes
       run: |
@@ -41,7 +45,7 @@ jobs:
         git checkout package-lock.json || true
         git checkout client/package-lock.json || true
         
-        git add client/public/price_history.json client/public/tracked_items.json
+        git add client/public/price_history.json client/public/tracked_items.json client/public/push_subscriptions.json
         if git diff --staged --quiet; then
           echo "No changes to commit"
         else

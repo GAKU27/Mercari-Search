@@ -2,11 +2,52 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const fs = require('fs');
 const path = require('path');
+const webpush = require('web-push');
 
 puppeteer.use(StealthPlugin());
 
 const TRACKED_ITEMS_PATH = path.join(__dirname, '../client/public/tracked_items.json');
 const PRICE_HISTORY_PATH = path.join(__dirname, '../client/public/price_history.json');
+const PUSH_SUBS_PATH = path.join(__dirname, '../client/public/push_subscriptions.json');
+
+// Web Push 設定 (GitHub Secrets から環境変数として渡される)
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_EMAIL) {
+  webpush.setVapidDetails(
+    process.env.VAPID_EMAIL,
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+} else {
+  console.warn('VAPID keys not fully set in environment variables. Web Push is deactivated.');
+}
+
+async function sendPushNotifications(title, body) {
+  if (!process.env.VAPID_PUBLIC_KEY) return;
+  
+  let subs = [];
+  if (fs.existsSync(PUSH_SUBS_PATH)) {
+    try {
+      subs = JSON.parse(fs.readFileSync(PUSH_SUBS_PATH, 'utf8'));
+    } catch (e) {
+      console.error('Failed to read push subscriptions', e);
+    }
+  }
+
+  const payload = JSON.stringify({
+    title,
+    body,
+    url: 'https://gaku27.github.io/Mercari-Search/'
+  });
+
+  const promises = subs.map(sub => 
+    webpush.sendNotification(sub, payload).catch(err => {
+      console.error('Failed to notify a subscriber:', err.statusCode);
+      // TODO: 必要に応じて 410 Gone 等のエラーで無効な購読を削除する処理を追加
+    })
+  );
+
+  await Promise.allSettled(promises);
+}
 
 async function scrapeMercariItem(url) {
   const browser = await puppeteer.launch({
@@ -83,6 +124,18 @@ async function main() {
           price: result.price,
           timestamp: timestamp
         });
+        
+        // Push通知を送信する（初回以外）
+        if (lastEntry) {
+          const diff = result.price - lastEntry.price;
+          const arrow = diff > 0 ? '↑' : '↓';
+          const sign = diff > 0 ? '+' : '';
+          const title = `${arrow} ${result.name}`;
+          const body = `¥${lastEntry.price.toLocaleString()} → ¥${result.price.toLocaleString()} (${sign}¥${diff.toLocaleString()})`;
+          await sendPushNotifications(title, body);
+          console.log(`Push sent: ${title} / ${body}`);
+        }
+
         // 履歴が多くなりすぎないように制限（直近100件）
         if (priceHistory[item.url].history.length > 100) {
           priceHistory[item.url].history.shift();

@@ -84,56 +84,117 @@ function App() {
     return permission === 'granted';
   };
 
-  // 価格変動通知を送る
-  const sendPriceNotification = (name: string, oldPrice: number, newPrice: number) => {
-    if (!notificationsEnabled || Notification.permission !== 'granted') return;
-    const diff = newPrice - oldPrice;
-    const arrow = diff > 0 ? '↑' : '↓';
-    const sign = diff > 0 ? '+' : '';
+  // Service Worker 登録と購読
+  const subscribeToPush = async () => {
     try {
-      new Notification(`${arrow} ${name}`, {
-        body: `¥${oldPrice.toLocaleString()} → ¥${newPrice.toLocaleString()} (${sign}¥${diff.toLocaleString()})`,
-        icon: '/Mercari-Search/favicon.svg',
-        tag: name, // 同じ商品の通知は上書き
-      });
-    } catch (e) {
-      console.warn('Notification failed:', e);
-    }
-  };
-
-  // 価格変動を検出して通知を送る
-  const checkPriceChanges = (newData: HistoryData) => {
-    const prev = prevHistoryRef.current;
-    if (Object.keys(prev).length === 0) return; // 初回はスキップ
-
-    for (const [url, itemData] of Object.entries(newData)) {
-      const prevItem = prev[url];
-      if (!prevItem || prevItem.history.length === 0 || itemData.history.length === 0) continue;
-      const prevPrice = prevItem.history[prevItem.history.length - 1].price;
-      const newPrice = itemData.history[itemData.history.length - 1].price;
-      if (prevPrice !== newPrice) {
-        sendPriceNotification(itemData.name, prevPrice, newPrice);
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        throw new Error('Push notifications are not supported by this browser.');
       }
+      
+      const registration = await navigator.serviceWorker.register('/Mercari-Search/sw.js');
+      await navigator.serviceWorker.ready;
+      
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: 'BIHVKGHxqhoqXlWlE-5t62q6aZqK72sA64Z-gD6a7m3X80fFm7o_7iE5a-x0l_nUqZk1l-jqyct9qPqzxAx8Io' // from generateVAPIDKeys()
+      });
+      
+      return subscription;
+    } catch (e) {
+      console.error('Failed to subscribe:', e);
+      return null;
     }
   };
 
-  // 通知ON/OFFトグル
+  // 購読解除
+  const unsubscribeFromPush = async () => {
+    try {
+      if (!('serviceWorker' in navigator)) return;
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await subscription.unsubscribe();
+      }
+    } catch (e) {
+      console.error('Failed to unsubscribe:', e);
+    }
+  };
+
+  // 通知ON/OFFトグル (Web Push版)
   const toggleNotifications = async () => {
+    if (!githubToken) {
+      setToast({ message: '通知を有効にするには、まず設定(⚙️)からGitHubトークンを保存してください。', type: 'error' });
+      setTimeout(() => setToast(null), 5000);
+      return;
+    }
+
     if (!notificationsEnabled) {
       const granted = await requestNotificationPermission();
-      if (granted) {
-        setNotificationsEnabled(true);
-        localStorage.setItem('notifications_enabled', 'true');
-        setToast({ message: '通知をONにしました。価格が変わったらお知らせします！', type: 'success' });
-        setTimeout(() => setToast(null), 3000);
-      } else {
+      if (!granted) {
         setToast({ message: 'ブラウザの通知がブロックされています。設定から許可してください。', type: 'error' });
         setTimeout(() => setToast(null), 5000);
+        return;
       }
+      
+      setToast({ message: '通知設定を保存中...', type: 'sync' });
+      const subscription = await subscribeToPush();
+      
+      if (!subscription) {
+        setToast({ message: 'お使いのブラウザはプッシュ通知に非対応か、エラーが発生しました。', type: 'error' });
+        setTimeout(() => setToast(null), 7000);
+        return;
+      }
+
+      try {
+        // GitHubの push_subscriptions.json に追記する
+        const subFilePath = 'client/public/push_subscriptions.json';
+        let sha = undefined;
+        let content = "[]";
+        
+        try {
+          const getRes = await axios.get(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${subFilePath}`, {
+            headers: { Authorization: `token ${githubToken}` }
+          });
+          sha = getRes.data.sha;
+          content = fromBase64(getRes.data.content);
+        } catch (e: any) {
+          if (e.response?.status !== 404) throw e;
+        }
+
+        const subs = JSON.parse(content);
+        // 同じエンドポイントがあれば上書き、なければ追加
+        const existingIdx = subs.findIndex((s: any) => s.endpoint === subscription.endpoint);
+        if (existingIdx >= 0) {
+          subs[existingIdx] = subscription;
+        } else {
+          subs.push(subscription);
+        }
+
+        await axios.put(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${subFilePath}`, {
+          message: `chore: add push subscription`,
+          content: toBase64(JSON.stringify(subs, null, 2)),
+          sha: sha
+        }, {
+          headers: { Authorization: `token ${githubToken}` }
+        });
+
+        setNotificationsEnabled(true);
+        localStorage.setItem('notifications_enabled', 'true');
+        setToast({ message: '通知をONにしました。アプリを閉じても価格変動をお知らせします！', type: 'success' });
+        setTimeout(() => setToast(null), 5000);
+
+      } catch (err: any) {
+        console.error('Subscription save failed', err);
+        setToast({ message: '設定の保存に失敗しました。トークンの権限(contents:write)を確認してください。', type: 'error' });
+        setTimeout(() => setToast(null), 5000);
+        await unsubscribeFromPush(); // 失敗したらローカル購読も戻す
+      }
+
     } else {
+      await unsubscribeFromPush();
       setNotificationsEnabled(false);
       localStorage.setItem('notifications_enabled', 'false');
-      setToast({ message: '通知をOFFにしました。', type: 'success' });
+      setToast({ message: 'このデバイスでの通知をOFFにしました。', type: 'success' });
       setTimeout(() => setToast(null), 3000);
     }
   };
@@ -152,8 +213,12 @@ function App() {
         axios.get(`${baseUrl}tracked_items.json?t=${Date.now()}`)
       ]);
       const newData = historyRes.data as HistoryData;
-      // 価格変動をチェックして通知
-      checkPriceChanges(newData);
+      
+      // クライアント側での差分通知（ブラウザを開いているときのリアルタイム通知用）
+      // Web Push と重複する可能性があるため、Service Worker側(バックグラウンド)で受け取る通知以外に、
+      // 画面を開いているときのみ出すローカル通知を送信するかどうかは選択肢。
+      // 今回はバックグラウンドの Web Push に一元化するため、ここでのローカル Notification 送信は削除します。
+      
       prevHistoryRef.current = newData;
       setHistoryData(newData);
       setTrackedItems(itemsRes.data);
