@@ -71,26 +71,28 @@ async function main() {
         priceHistory[item.url] = {
           name: result.name,
           imageUrl: result.imageUrl,
+          lastChecked: timestamp,
           history: []
         };
       }
       
-      // 直近の価格と同じでなければ追加（または常に記録するかはお好み）
+      // 価格が変化した場合のみ履歴に追記（重複排除）
       const lastEntry = priceHistory[item.url].history.slice(-1)[0];
       if (!lastEntry || lastEntry.price !== result.price) {
         priceHistory[item.url].history.push({
           price: result.price,
           timestamp: timestamp
         });
-        // 履歴が多くなりすぎないように制限（例：直近100件）
+        // 履歴が多くなりすぎないように制限（直近100件）
         if (priceHistory[item.url].history.length > 100) {
           priceHistory[item.url].history.shift();
         }
       }
       
-      // 名前や画像URLを最新に更新
+      // 名前・画像・最終チェック日時を毎回更新（価格変化がなくても更新される）
       priceHistory[item.url].name = result.name;
       priceHistory[item.url].imageUrl = result.imageUrl;
+      priceHistory[item.url].lastChecked = timestamp;
       
       // trackedItems の名前も更新
       item.name = result.name;
@@ -98,7 +100,7 @@ async function main() {
       console.log(`Successfully updated ${item.url}: ¥${result.price}`);
     }
     
-    // Wait to avoid rate limiting
+    // レート制限対策
     await new Promise(r => setTimeout(r, 5000));
   }
 

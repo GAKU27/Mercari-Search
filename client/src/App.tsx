@@ -12,6 +12,7 @@ interface PricePoint {
 interface ItemHistory {
   name: string;
   imageUrl: string;
+  lastChecked?: string;
   history: PricePoint[];
 }
 
@@ -318,7 +319,11 @@ function App() {
             const item = historyData[trackedItem.url];
             const hasData = !!item;
             const currentPrice = hasData && item.history.length > 0 ? item.history[item.history.length - 1].price : 0;
-            const lastUpdate = hasData && item.history.length > 0 ? new Date(item.history[item.history.length - 1].timestamp).toLocaleString() : '---';
+            // lastChecked があればそれを優先、なければ最後の価格変化日時を使用
+            const lastUpdateRaw = hasData
+              ? (item.lastChecked || (item.history.length > 0 ? item.history[item.history.length - 1].timestamp : null))
+              : null;
+            const lastUpdate = lastUpdateRaw ? new Date(lastUpdateRaw).toLocaleString() : '---';
 
             return (
               <div key={trackedItem.url} className={`card item-card ${focusedUrl === trackedItem.url ? 'focused' : ''}`}>
