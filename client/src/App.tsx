@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Plus, TrendingUp, RefreshCw, ExternalLink, Settings, ShieldCheck, AlertCircle, Trash2, Zap } from 'lucide-react';
+import { Plus, TrendingUp, RefreshCw, ExternalLink, Settings, ShieldCheck, AlertCircle, Trash2, Zap, Bell, BellOff } from 'lucide-react';
 import PriceChart from './components/PriceChart';
 import './index.css';
 
@@ -66,10 +66,77 @@ function App() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'sync' } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastCheckTimeAtStart, setLastCheckTimeAtStart] = useState<string | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
+    return localStorage.getItem('notifications_enabled') === 'true';
+  });
+  const prevHistoryRef = useRef<HistoryData>({});
 
   const REPO_OWNER = 'GAKU27';
   const REPO_NAME = 'Mercari-Search';
   const FILE_PATH = 'client/public/tracked_items.json';
+
+  // 通知許可リクエスト
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) return false;
+    if (Notification.permission === 'granted') return true;
+    if (Notification.permission === 'denied') return false;
+    const permission = await Notification.requestPermission();
+    return permission === 'granted';
+  };
+
+  // 価格変動通知を送る
+  const sendPriceNotification = (name: string, oldPrice: number, newPrice: number) => {
+    if (!notificationsEnabled || Notification.permission !== 'granted') return;
+    const diff = newPrice - oldPrice;
+    const arrow = diff > 0 ? '↑' : '↓';
+    const sign = diff > 0 ? '+' : '';
+    try {
+      new Notification(`${arrow} ${name}`, {
+        body: `¥${oldPrice.toLocaleString()} → ¥${newPrice.toLocaleString()} (${sign}¥${diff.toLocaleString()})`,
+        icon: '/Mercari-Search/favicon.svg',
+        tag: name, // 同じ商品の通知は上書き
+      });
+    } catch (e) {
+      console.warn('Notification failed:', e);
+    }
+  };
+
+  // 価格変動を検出して通知を送る
+  const checkPriceChanges = (newData: HistoryData) => {
+    const prev = prevHistoryRef.current;
+    if (Object.keys(prev).length === 0) return; // 初回はスキップ
+
+    for (const [url, itemData] of Object.entries(newData)) {
+      const prevItem = prev[url];
+      if (!prevItem || prevItem.history.length === 0 || itemData.history.length === 0) continue;
+      const prevPrice = prevItem.history[prevItem.history.length - 1].price;
+      const newPrice = itemData.history[itemData.history.length - 1].price;
+      if (prevPrice !== newPrice) {
+        sendPriceNotification(itemData.name, prevPrice, newPrice);
+      }
+    }
+  };
+
+  // 通知ON/OFFトグル
+  const toggleNotifications = async () => {
+    if (!notificationsEnabled) {
+      const granted = await requestNotificationPermission();
+      if (granted) {
+        setNotificationsEnabled(true);
+        localStorage.setItem('notifications_enabled', 'true');
+        setToast({ message: '通知をONにしました。価格が変わったらお知らせします！', type: 'success' });
+        setTimeout(() => setToast(null), 3000);
+      } else {
+        setToast({ message: 'ブラウザの通知がブロックされています。設定から許可してください。', type: 'error' });
+        setTimeout(() => setToast(null), 5000);
+      }
+    } else {
+      setNotificationsEnabled(false);
+      localStorage.setItem('notifications_enabled', 'false');
+      setToast({ message: '通知をOFFにしました。', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -84,10 +151,14 @@ function App() {
         axios.get(`${baseUrl}price_history.json?t=${Date.now()}`),
         axios.get(`${baseUrl}tracked_items.json?t=${Date.now()}`)
       ]);
-      setHistoryData(historyRes.data);
+      const newData = historyRes.data as HistoryData;
+      // 価格変動をチェックして通知
+      checkPriceChanges(newData);
+      prevHistoryRef.current = newData;
+      setHistoryData(newData);
       setTrackedItems(itemsRes.data);
       setError(null);
-      return historyRes.data;
+      return newData;
     } catch (err) {
       console.error('Failed to fetch data', err);
       setError('データの読み込みに失敗しました。最初のスクレイピングが完了するまでお待ちください。');
@@ -314,18 +385,25 @@ function App() {
             <h1>Mercari Price Tracker</h1>
             <p className="subtitle" style={{ margin: 0 }}>GitHub Actions で 30分ごとに価格を自動チェック</p>
           </div>
-          <div className="badge-container" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="badge-container" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button 
               onClick={handleRefresh} 
               className="action-btn zap"
-              disabled={loading}
+              disabled={loading || isSyncing}
               title="今すぐ最新価格をチェック"
             >
-              <Zap size={18} className={loading ? 'animate-pulse' : ''} />
-              <span>即時取得</span>
+              <Zap size={18} className={loading || isSyncing ? 'animate-pulse' : ''} />
+              <span>{isSyncing ? '同期中...' : '即時取得'}</span>
+            </button>
+            <button
+              onClick={toggleNotifications}
+              className={`action-btn notify ${notificationsEnabled ? 'on' : 'off'}`}
+              title={notificationsEnabled ? '通知OFF' : '通知ON'}
+            >
+              {notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}
             </button>
             <div className="badge">
-              {trackedItems.length} 個のアイテム
+              {trackedItems.length} 個
             </div>
           </div>
         </div>
@@ -412,6 +490,12 @@ function App() {
             const hasData = !!item;
             const currentPrice = hasData && item.history.length > 0 ? item.history[item.history.length - 1].price : 0;
             
+            // 価格変動バッジの計算
+            let priceDiff = 0;
+            if (hasData && item.history.length >= 2) {
+              priceDiff = item.history[item.history.length - 1].price - item.history[item.history.length - 2].price;
+            }
+            
             // グラフ用にデータを調整（価格が変わっていなくても最新のチェック時刻まで線を伸ばす）
             const chartData = hasData ? [...item.history] : [];
             if (hasData && item.lastChecked && item.history.length > 0) {
@@ -439,7 +523,14 @@ function App() {
                   )}
                   <div className="item-info">
                     <div className="item-name">{hasData ? item.name : "チェック待ち..."}</div>
-                    <div className="item-price">{hasData ? `¥${currentPrice.toLocaleString()}` : "---"}</div>
+                    <div className="item-price">
+                      {hasData ? `¥${currentPrice.toLocaleString()}` : "---"}
+                      {priceDiff !== 0 && (
+                        <span className={`price-diff ${priceDiff > 0 ? 'up' : 'down'}`}>
+                          {priceDiff > 0 ? '↑' : '↓'}¥{Math.abs(priceDiff).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: '4px' }}>
                     {!focusedUrl && (

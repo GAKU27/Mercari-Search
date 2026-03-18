@@ -306,11 +306,11 @@ button:disabled {
   }
 
   h1 {
-    font-size: 1.8rem;
+    font-size: 1.6rem;
   }
 
   .subtitle {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
   }
 
   header > div {
@@ -329,9 +329,21 @@ button:disabled {
     gap: 8px;
   }
 
+  .add-item-form input {
+    width: 100%;
+    min-height: 48px;
+    font-size: 16px; /* prevent iOS zoom on focus */
+  }
+
   .add-item-form button {
     width: 100%;
+    min-height: 48px;
     order: 2;
+  }
+
+  .add-item-form button[type="button"] {
+    width: auto;
+    min-height: 48px;
   }
 
   .items-grid {
@@ -340,32 +352,33 @@ button:disabled {
   }
 
   .item-card {
-    padding: 16px;
+    padding: 14px;
   }
 
   .item-header {
-    gap: 12px;
+    gap: 10px;
   }
 
   .item-image {
-    width: 60px;
-    height: 60px;
+    width: 56px;
+    height: 56px;
+    border-radius: 10px;
   }
 
   .item-name {
-    font-size: 1rem;
+    font-size: 0.9rem;
   }
 
   .item-price {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
   }
 
   .chart-container {
-    height: 180px;
+    height: 160px;
   }
 
   .item-card.focused .chart-container {
-    height: 300px;
+    height: 280px;
   }
 
   .toast {
@@ -373,5 +386,84 @@ button:disabled {
     right: 12px;
     bottom: 12px;
     text-align: center;
+    font-size: 0.9rem;
   }
+
+  .delete-btn {
+    min-width: 40px;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .action-btn.zap {
+    padding: 10px 14px;
+    font-size: 0.85rem;
+  }
+
+  .action-btn.notify {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+  }
+}
+
+/* Notification Toggle Button */
+.action-btn.notify {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-btn.notify.on {
+  background: linear-gradient(135deg, #fceabb 0%, #f8b500 100%);
+  color: #000;
+  border-color: transparent;
+}
+
+.action-btn.notify:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 10px rgba(248, 181, 0, 0.3);
+}
+
+/* Price Diff Badge */
+.price-diff {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.price-diff.up {
+  background: rgba(255, 77, 77, 0.15);
+  color: #ff4d4d;
+}
+
+.price-diff.down {
+  background: rgba(0, 255, 136, 0.15);
+  color: #00ff88;
+}
+
+/* Toast Sync Animation */
+.toast.sync {
+  border-color: #f8b500;
+  animation: slideIn 0.3s ease-out, pulse 2s ease-in-out infinite 0.3s;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
