@@ -319,6 +319,16 @@ function App() {
             const item = historyData[trackedItem.url];
             const hasData = !!item;
             const currentPrice = hasData && item.history.length > 0 ? item.history[item.history.length - 1].price : 0;
+            
+            // グラフ用にデータを調整（価格が変わっていなくても最新のチェック時刻まで線を伸ばす）
+            const chartData = hasData ? [...item.history] : [];
+            if (hasData && item.lastChecked && item.history.length > 0) {
+              const lastPoint = item.history[item.history.length - 1];
+              if (new Date(item.lastChecked).getTime() > new Date(lastPoint.timestamp).getTime()) {
+                chartData.push({ price: lastPoint.price, timestamp: item.lastChecked });
+              }
+            }
+
             // lastChecked があればそれを優先、なければ最後の価格変化日時を使用
             const lastUpdateRaw = hasData
               ? (item.lastChecked || (item.history.length > 0 ? item.history[item.history.length - 1].timestamp : null))
@@ -365,7 +375,7 @@ function App() {
                 </div>
                 
                 <div className="chart-container" style={{ height: focusedUrl ? '400px' : '200px' }}>
-                  {hasData ? <PriceChart data={item.history} /> : (
+                  {hasData ? <PriceChart data={chartData} /> : (
                     <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                       最初の価格データを取得中...
                     </div>
