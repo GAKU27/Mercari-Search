@@ -41,7 +41,9 @@ const toBase64 = (str: string) => {
 };
 
 const fromBase64 = (base64: string) => {
-  const binString = atob(base64);
+  // GitHubからの応答には改行が含まれる場合があるため削除
+  const cleanBase64 = base64.replace(/[\n\r\s]/g, '');
+  const binString = atob(cleanBase64);
   const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0)!);
   return new TextDecoder().decode(bytes);
 };

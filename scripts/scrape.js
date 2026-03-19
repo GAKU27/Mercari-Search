@@ -73,10 +73,16 @@ async function scrapeMercariItem(url) {
                        document.querySelector('span[class*="price"]')?.innerText?.replace(/[^0-9]/g, '');
       const imageUrl = getMeta('og:image');
 
+      const bodyText = document.body.innerText || '';
+      const isDeleted = bodyText.includes('この商品は削除されました') || 
+                        bodyText.includes('ページが見つかりません') ||
+                        document.title.includes('エラー');
+
       return {
-        name: title?.replace(' - メルカリ', ''),
+        name: title ? title.replace(' - メルカリ', '') : null,
         price: parseInt(priceStr, 10),
-        imageUrl: imageUrl
+        imageUrl: imageUrl,
+        isDeleted: isDeleted
       };
     });
 
@@ -95,19 +101,33 @@ async function scrapeMercariItem(url) {
 }
 
 async function main() {
-  const trackedItems = JSON.parse(fs.readFileSync(TRACKED_ITEMS_PATH, 'utf8'));
+  let trackedItems = JSON.parse(fs.readFileSync(TRACKED_ITEMS_PATH, 'utf8'));
   let priceHistory = {};
   if (fs.existsSync(PRICE_HISTORY_PATH)) {
     priceHistory = JSON.parse(fs.readFileSync(PRICE_HISTORY_PATH, 'utf8'));
   }
 
   const timestamp = new Date().toISOString();
+  let itemsToKeep = [];
 
   for (const item of trackedItems) {
     console.log(`Scraping: ${item.name || item.url}...`);
     const result = await scrapeMercariItem(item.url);
     
-    if (result && result.price) {
+    // 削除済み判定
+    if (result && result.isDeleted) {
+      const displayName = result.name || item.name || '商品';
+      console.log(`Item deleted: ${displayName}`);
+      await sendPushNotifications(`❌ 削除済み: ${displayName}`, `この商品はメルカリから削除されたため、追跡を自動停止しました。`);
+      
+      // priceHistoryからも削除
+      if (priceHistory[item.url]) {
+        delete priceHistory[item.url];
+      }
+      continue; // itemsToKeepに追加しないことで自動リストラ
+    }
+
+    if (result && !isNaN(result.price)) {
       if (!priceHistory[item.url]) {
         priceHistory[item.url] = {
           name: result.name,
@@ -153,12 +173,16 @@ async function main() {
       console.log(`Successfully updated ${item.url}: ¥${result.price}`);
     }
     
+    // エラーで取れなかった場合(一時的)や、正常に更新できた場合はキープ
+    itemsToKeep.push(item);
+
     // レート制限対策
     await new Promise(r => setTimeout(r, 5000));
   }
 
+  // 削除済みアイテムを除外した新しいリストを保存
   fs.writeFileSync(PRICE_HISTORY_PATH, JSON.stringify(priceHistory, null, 2));
-  fs.writeFileSync(TRACKED_ITEMS_PATH, JSON.stringify(trackedItems, null, 2));
+  fs.writeFileSync(TRACKED_ITEMS_PATH, JSON.stringify(itemsToKeep, null, 2));
   console.log('Update complete.');
 }
 
