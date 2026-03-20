@@ -31,6 +31,9 @@ jobs:
         cd client
         npm ci || npm install --no-save
 
+    - name: Pull latest data (API Proxyが追加した変更を取り込む)
+      run: git pull --rebase origin main
+
     - name: Run Scraper
       run: npm run scrape
       env:
