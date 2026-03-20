@@ -4,9 +4,29 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#0a0a0c" />
-    <meta name="description" content="メルカリ商品の価格を自動追跡。30分ごとに価格をチェックし、変動があれば通知でお知らせします。" />
+    <meta name="theme-color" content="#1a1b1e" />
+    <meta name="description" content="Mercari Price Tracker - Track item prices automatically" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Mercari Price Tracker</title>
+    <script>
+      // 強力なキャッシュクリア機構
+      const APP_VERSION = 'v1.0.4';
+      if (localStorage.getItem('app_version') !== APP_VERSION) {
+        localStorage.setItem('app_version', APP_VERSION);
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            for(let registration of registrations) {
+              registration.update();
+            }
+          });
+        }
+        if (window.location.search.indexOf('nocache') === -1) {
+          window.location.href = window.location.pathname + '?nocache=' + new Date().getTime();
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
