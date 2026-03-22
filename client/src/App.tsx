@@ -61,31 +61,36 @@ function App() {
   });
   const prevHistoryRef = useRef<HistoryData>({});
   
-  // 楽観的UI保護状態のロード
-  const [recentlyAddedUrls] = useState<Map<string, {name: string, expiry: number}>>(() => {
+  // 楽観的UI保護状態のロード (useRefの遅延初期化を使用)
+  const recentlyAddedUrls = useRef<Map<string, {name: string, expiry: number}>>();
+  if (!recentlyAddedUrls.current) {
     try {
       const saved = localStorage.getItem('recentlyAddedUrls');
-      if (saved) return new Map(JSON.parse(saved));
-    } catch (e) {}
-    return new Map();
-  });
+      recentlyAddedUrls.current = saved ? new Map(JSON.parse(saved)) : new Map();
+    } catch (e) {
+      recentlyAddedUrls.current = new Map();
+    }
+  }
   
-  const [recentlyDeletedUrls] = useState<Set<string>>(() => {
+  const recentlyDeletedUrls = useRef<Set<string>>();
+  if (!recentlyDeletedUrls.current) {
     try {
       const saved = localStorage.getItem('recentlyDeletedUrls');
-      if (saved) return new Set(JSON.parse(saved));
-    } catch (e) {}
-    return new Set();
-  });
+      recentlyDeletedUrls.current = saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (e) {
+      recentlyDeletedUrls.current = new Set();
+    }
+  }
 
   const saveOptimisticState = () => {
-    // 期限切れを削除してから保存
     const now = Date.now();
-    for (const [u, info] of recentlyAddedUrls.entries()) {
-      if (now > info.expiry) recentlyAddedUrls.delete(u);
+    if (recentlyAddedUrls.current && recentlyDeletedUrls.current) {
+      for (const [u, info] of recentlyAddedUrls.current.entries()) {
+        if (now > info.expiry) recentlyAddedUrls.current.delete(u);
+      }
+      localStorage.setItem('recentlyAddedUrls', JSON.stringify(Array.from(recentlyAddedUrls.current.entries())));
+      localStorage.setItem('recentlyDeletedUrls', JSON.stringify(Array.from(recentlyDeletedUrls.current)));
     }
-    localStorage.setItem('recentlyAddedUrls', JSON.stringify(Array.from(recentlyAddedUrls.entries())));
-    localStorage.setItem('recentlyDeletedUrls', JSON.stringify(Array.from(recentlyDeletedUrls)));
   };
 
   // Service Worker の登録
@@ -184,20 +189,22 @@ function App() {
       let mergedItems = (itemsRes.data as {url: string, name: string}[]);
 
       // 期限切れの保護を削除
-      for (const [u, info] of recentlyAddedUrls.entries()) {
-        if (now > info.expiry) recentlyAddedUrls.delete(u);
-      }
-      saveOptimisticState();
-
-      // まだ保護期間中のアイテムを補完
-      for (const [u, info] of recentlyAddedUrls.entries()) {
-        if (!mergedItems.some(item => item.url === u)) {
-          mergedItems = [...mergedItems, { url: u, name: info.name }];
+      if (recentlyAddedUrls.current && recentlyDeletedUrls.current) {
+        for (const [u, info] of recentlyAddedUrls.current.entries()) {
+          if (now > info.expiry) recentlyAddedUrls.current.delete(u);
         }
-      }
+        saveOptimisticState();
 
-      // 最近削除されたアイテムを除外
-      mergedItems = mergedItems.filter(item => !recentlyDeletedUrls.has(item.url));
+        // まだ保護期間中のアイテムを補完
+        for (const [u, info] of recentlyAddedUrls.current.entries()) {
+          if (!mergedItems.some(item => item.url === u)) {
+            mergedItems = [...mergedItems, { url: u, name: info.name }];
+          }
+        }
+
+        // 最近削除されたアイテムを除外
+        mergedItems = mergedItems.filter(item => !recentlyDeletedUrls.current!.has(item.url));
+      }
 
       setTrackedItems(mergedItems);
       setError(null);
@@ -267,10 +274,12 @@ function App() {
 
       await axios.post(`${API_BASE_URL}/api/items`, { url, userId });
 
-      // 楽観的UI: 120秒間（余裕を持たせる）はfetchDataに上書きされないよう保護、ストレージにも保存
-      recentlyAddedUrls.set(url, { name: '取得中...', expiry: Date.now() + 120000 });
-      recentlyDeletedUrls.delete(url);
-      saveOptimisticState();
+      // 楽観的UI: 5分間（300秒間）はfetchDataに上書きされないよう保護、ストレージにも保存
+      if (recentlyAddedUrls.current && recentlyDeletedUrls.current) {
+        recentlyAddedUrls.current.set(url, { name: '取得中...', expiry: Date.now() + 300000 });
+        recentlyDeletedUrls.current.delete(url);
+        saveOptimisticState();
+      }
 
       // ローカル更新
       setTrackedItems(prev => [...prev, { url, name: "取得中..." }]);
@@ -322,15 +331,17 @@ function App() {
     setError(null);
     try {
       await axios.post(`${API_BASE_URL}/api/items/delete`, { url: targetUrl, userId });
-      // 楽観的UI: 削除したアイテムが古いキャッシュで復活しないよう保護
-      recentlyDeletedUrls.add(targetUrl);
-      recentlyAddedUrls.delete(targetUrl);
-      saveOptimisticState();
-      
-      setTimeout(() => {
-        recentlyDeletedUrls.delete(targetUrl);
+      // 楽観的UI: 削除したアイテムが古いキャッシュで復活しないよう保護 (5分間)
+      if (recentlyDeletedUrls.current && recentlyAddedUrls.current) {
+        recentlyDeletedUrls.current.add(targetUrl);
+        recentlyAddedUrls.current.delete(targetUrl);
         saveOptimisticState();
-      }, 120000);
+        
+        setTimeout(() => {
+          recentlyDeletedUrls.current?.delete(targetUrl);
+          saveOptimisticState();
+        }, 300000);
+      }
       
       setTrackedItems(prev => prev.filter(i => i.url !== targetUrl));
       alert('商品を削除しました。');
